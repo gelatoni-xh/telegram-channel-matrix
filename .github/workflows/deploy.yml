@@ -1,0 +1,71 @@
+name: Check and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-channel-matrix-production
+  cancel-in-progress: false
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: matrix_test
+          POSTGRES_PASSWORD: local-development-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_TEST_URL: postgresql://postgres:local-development-only@127.0.0.1:5432/matrix_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm test && npm run build
+      - name: Build production image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          docker build -f deploy/Dockerfile -t telegram-channel-matrix:${GITHUB_SHA} .
+          docker save telegram-channel-matrix:${GITHUB_SHA} | gzip -1 > image.tar.gz
+          tar -czf source.tar.gz \
+            .github src tests scripts prompts migrations deploy \
+            compose.yml package.json package-lock.json tsconfig.json README.md .gitignore .dockerignore
+      - name: Upload and deploy
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/matrix-deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/matrix-deploy ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/matrix-deploy' EXIT
+          ssh_options=(-i ~/.ssh/matrix-deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          upload="/opt/apps/telegram-channel-matrix/releases/$RELEASE_SHA"
+          ssh "${ssh_options[@]}" "$remote" "mkdir -p '$upload'"
+          sha256sum image.tar.gz source.tar.gz > SHA256SUMS
+          scp "${ssh_options[@]}" image.tar.gz source.tar.gz SHA256SUMS "$remote:$upload/"
+          ssh "${ssh_options[@]}" "$remote" \
+            "cd '$upload' && sha256sum -c SHA256SUMS && mkdir -p source && tar -xzf source.tar.gz -C source && bash source/deploy/install-release.sh '$RELEASE_SHA'"

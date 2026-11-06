@@ -1,0 +1,31 @@
+name: telegram-channel-matrix
+services:
+  worker:
+    image: ${MATRIX_IMAGE:-telegram-channel-matrix:local}
+    env_file: .env.production
+    environment:
+      MATRIX_PRODUCTION: '1'
+      DATA_DIRECTORY: /data
+      LLM_CONFIG_PATH: /run/config/llm.json
+      MAIL_CONFIG_PATH: /run/config/mail.json
+      NODE_OPTIONS: --max-old-space-size=160
+    volumes:
+      - ./data:/data
+      - ./config:/run/config:ro
+    networks: [database]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: '2'
+networks:
+  database:
+    external: true
+    name: ${DATABASE_NETWORK:-tasuki-keifu_default}

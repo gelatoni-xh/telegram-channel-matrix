@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegram channel daily digests
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+SupplementaryGroups=docker
+WorkingDirectory=/opt/apps/telegram-channel-matrix
+ExecStart=/usr/bin/flock -n /run/lock/telegram-channel-matrix-operation.lock /bin/bash /opt/apps/telegram-channel-matrix/deploy/run.sh
+ExecStopPost=-/usr/bin/docker stop -t 20 telegram-channel-matrix-daily
+ExecStopPost=/bin/bash /opt/apps/telegram-channel-matrix/deploy/failure-report.sh
+ExecStopPost=/bin/bash /opt/apps/telegram-channel-matrix/deploy/backup.sh
+TimeoutStartSec=90min
+TimeoutStopSec=45
+# No automatic retry: Telegram may already have accepted a message.
+Restart=no

@@ -1,0 +1,33 @@
+{
+  "name": "telegram-channel-matrix",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "doctor": "tsx src/cli.ts doctor",
+    "test-send": "tsx src/cli.ts test-send",
+    "llm:import": "python3 scripts/import-cc-switch-llm.py",
+    "llm:check": "tsx src/llm-config-check.ts",
+    "preview:collect": "python3 scripts/collect-preview.py",
+    "preview:draft": "tsx src/local-preview.ts",
+    "sample:send": "tsx src/send-samples.ts",
+    "preview:digest": "tsx src/digest-preview.ts",
+    "daily:run": "node dist/src/daily-run.js"
+  },
+  "dependencies": {
+    "pg": "^8.23.1",
+    "undici": "^6.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

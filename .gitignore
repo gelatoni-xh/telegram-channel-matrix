@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env*
+!.env.example
+*.log
+.DS_Store
+output/
+__pycache__/
+config/
+data/
+backups/
+releases/
+release.env
+previous-release.env
+.env
+.env.*
+!.env.example
