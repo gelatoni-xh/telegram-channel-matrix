@@ -80,6 +80,20 @@ export class TelegramPublisher {
     return chat.id as number;
   }
 
+  async memberCount(chatId: number | string): Promise<number> {
+    const response = object(await this.transport('getChatMemberCount', { chat_id: chatId }));
+    if (response.ok !== true) {
+      const code = typeof response.error_code === 'number' ? response.error_code : undefined;
+      throw new TelegramError(`Telegram API getChatMemberCount 未成功${code ? `（${code}）` : ''}。`,
+        response.ok === false && code !== undefined && code < 500 ? 'rejected' : 'uncertain');
+    }
+    const result = response.result;
+    if (typeof result !== 'number' || !Number.isSafeInteger(result) || result < 0) {
+      throw new TelegramError('频道订阅人数响应无效。', 'uncertain');
+    }
+    return result;
+  }
+
   async send(chatId: number, text: string): Promise<number> {
     if (!text.trim() || text.length > 4096) {
       throw new TelegramError('消息为空或超过 Telegram 长度限制。', 'rejected');

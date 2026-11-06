@@ -34,6 +34,13 @@ async function main(): Promise<void> {
     await mkdir(directory, { recursive: true, mode: 0o700 });
     await store.db.query('INSERT INTO matrix_runs(id,operating_date,status) VALUES($1,$2,\'running\')', [runId,date]);
     started = true;
+    transport = createTransport(await readBotToken());
+    const publisher = new TelegramPublisher(transport.transport);
+    report.channelSnapshots = await Promise.all(channels.map(async channel => {
+      let memberCount: number | null = null;
+      try { memberCount = await publisher.memberCount(channel.username); } catch { /* Analytics must not block publication. */ }
+      return { channel: channel.key, memberCount, collectedAt: new Date().toISOString() };
+    }));
     const active = [];
     for (const channel of channels) {
       const status = await store.state(channel.key, date);
@@ -67,8 +74,6 @@ async function main(): Promise<void> {
     report.model = generated.model;
     report.promptHash = generated.promptHash;
     report.generation = generated.results.map((entry: any) => ({ id: entry.id, status: entry.status, kind: entry.kind }));
-    transport = createTransport(await readBotToken());
-    const publisher = new TelegramPublisher(transport.transport);
     const bot = await publisher.identity();
     for (const channel of active) {
       try {

@@ -21,6 +21,17 @@ test('digest sender requires positive message ID and matching Telegram channel',
   await assert.rejects(publisher.sendDigest(-1001, '<b>日报</b>'), e => e instanceof TelegramError && e.outcome === 'uncertain');
 });
 
+test('subscriber count uses Telegram aggregate count and rejects malformed values', async () => {
+  const publisher = new TelegramPublisher(async (method, parameters) => {
+    assert.equal(method, 'getChatMemberCount');
+    assert.equal(parameters.chat_id, '@ai_product_radar_cn');
+    return { ok: true, result: 1234 };
+  });
+  assert.equal(await publisher.memberCount('@ai_product_radar_cn'), 1234);
+  const invalid = new TelegramPublisher(async () => ({ ok: true, result: '1234' }));
+  await assert.rejects(invalid.memberCount('@ai_product_radar_cn'), e => e instanceof TelegramError && e.outcome === 'uncertain');
+});
+
 const candidate: Candidate = { id: '42', channel: 'steam', title: 'Game', summary: 'summary', source: 'Steam',
   url: 'https://store.steampowered.com/app/42/', fetchedAt: '2026-11-05T01:00:00Z',
   facts: { region: 'CN', currency: 'CNY', initialMinor: 1000, finalMinor: 500, discountPercent: 50, expiresAt: '2026-11-10T00:00:00Z' } };
