@@ -42,7 +42,7 @@ jobs:
           docker build -f deploy/Dockerfile -t telegram-channel-matrix:${GITHUB_SHA} .
           docker save telegram-channel-matrix:${GITHUB_SHA} | gzip -1 > image.tar.gz
           tar -czf source.tar.gz \
-            .github src tests scripts prompts migrations deploy \
+            .github src dist tests scripts prompts migrations deploy \
             compose.yml package.json package-lock.json tsconfig.json README.md .gitignore .dockerignore
       - name: Upload and deploy
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'

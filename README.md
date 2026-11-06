@@ -121,7 +121,7 @@ GitHub Actions 在 PR 上运行 PostgreSQL 集成测试、类型检查、单元�
 
 修正版镜像 `telegram-channel-matrix:20261105-v2` 已上线；类型检查、构建和 25 项离线测试通过（另 1 项数据库集成测试本次跳过，首次部署前已使用临时 PostgreSQL 实测通过）。线上再次运行 `d0b43260-565d-4b6a-9118-7f739454455c` 返回 already_sent，两个频道均 blocked_sent，sources 为空，在调用数据源和 LLM 前结束，原消息 ID 保持 5。systemd Result=success，邮件再次提交 SMTP。
 
-定时器已 enabled/active，系统确认下次触发为 2026-11-06 01:00 UTC，即北京时间 2026-11-06 09:00。这是触发时间，文章在采集、LLM 与复核完成后发布。尚未经过下一日自动触发验收。服务退出生成的两份备份 SHA256 均通过；最新一份另存至本机 `~/.local/share/telegram-channel-matrix/backups/`。未增加自动异地备份或宣称完成恢复演练。
+频道服务已迁移至 Ubuntu-4。2026-11-06 09:00 的 systemd 定时执行返回 completed：AI 频道发布 2 条、Steam 频道发布 1 条，两个频道的 Telegram 消息回执均已保存，运行报告邮件已提交 SMTP。该次验证证明实例定时和运行配置可以完成一轮发布。部署由 GitHub Actions 管理；首次公开仓库 Actions 部署验收随后记录在本节。
 
 
 ### Host migration (2026-11-06)
