@@ -123,6 +123,8 @@ GitHub Actions 在 PR 上运行 PostgreSQL 集成测试、类型检查、单元�
 
 频道服务已迁移至 Ubuntu-4。2026-11-06 09:00 的 systemd 定时执行返回 completed：AI 频道发布 2 条、Steam 频道发布 1 条，两个频道的 Telegram 消息回执均已保存，运行报告邮件已提交 SMTP。该次验证证明实例定时和运行配置可以完成一轮发布。部署由 GitHub Actions 管理；首次公开仓库 Actions 部署验收随后记录在本节。
 
+公开仓库首次部署：commit `2a5ed528de1e78251904c946c1eeab8f3b2cf754`，Actions run `42267777122` 成功（测试、镜像构建、SSH 上传和服务器部署均通过）。Ubuntu-4 当前镜像标记与该 commit 一致；systemd 每日定时器仍为 enabled，未因部署而重启或发送内容。GitHub 仓库只包含部署 SSH Secrets；没有加入服务器运行配置、Telegram/LLM/SMTP 密钥、数据库备份或本机凭据路径。
+
 
 ### Host migration (2026-11-06)
 
