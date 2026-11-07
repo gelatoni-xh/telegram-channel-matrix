@@ -13,23 +13,40 @@ from zoneinfo import ZoneInfo
 CHANNELS = {'ai': 'AI 产品雷达', 'steam': 'Steam 折扣情报局'}
 
 
+def email_subject(report):
+    parts = []
+    for channel in report.get('channels', []):
+        title = CHANNELS.get(channel.get('channel'), channel.get('channel', '未知频道'))
+        if channel.get('status') == 'sent':
+            parts.append(f"{title}发送 {channel.get('count', 0)} 条")
+        elif channel.get('status') == 'no_content':
+            parts.append(f'{title}本次无合格内容')
+        elif channel.get('status') == 'blocked_sent':
+            parts.append(f'{title}今日已发送')
+        else:
+            parts.append(f'{title}推送需检查')
+    return '；'.join(parts) or f"频道推送状态 · {report['date']}"
+
+
 def beijing_time(value):
     return datetime.fromisoformat(value.replace('Z', '+00:00')).astimezone(ZoneInfo('Asia/Shanghai')).strftime('%m 月 %d 日 %H:%M')
 
 
 def email_body(report):
-    lines = [f"早上好，{report['date']} 的频道精选已完成。", '以下为今日频道精选。']
+    lines = [f"{report['date']} 本次频道推送已完成。"]
     copy = report.get('emailCopy') or {}
 
     sent = [channel for channel in report.get('channels', []) if channel.get('status') == 'sent']
     if sent:
-        lines.extend(['', '今日概览'])
+        lines.extend(['', '本次概览'])
         for channel in report.get('channels', []):
             title = CHANNELS.get(channel.get('channel'), channel.get('channel', '未知频道'))
             if channel.get('status') == 'sent':
-                lines.append(f"- {title}：发布 {channel.get('count', 0)} 条精选")
+                lines.append(f"- {title}：发送 {channel.get('count', 0)} 条")
             elif channel.get('status') == 'no_content':
-                lines.append(f'- {title}：今日无精选发布')
+                lines.append(f'- {title}：本次无合格内容')
+            elif channel.get('status') == 'blocked_sent':
+                lines.append(f'- {title}：今日已发送，跳过重复发布')
             else:
                 lines.append(f"- {title}：{channel.get('status', '状态未知')}")
 
@@ -84,8 +101,7 @@ def main():
         message = EmailMessage()
         message['From'] = config['from']
         message['To'] = config['to']
-        published = sum(channel.get('status') == 'sent' for channel in report.get('channels', []))
-        message['Subject'] = f"[频道精选日报] {report['date']} · {published} 个频道发布"
+        message['Subject'] = email_subject(report)
         message.set_content(email_body(report))
         with smtplib.SMTP_SSL(config['host'], config['port'], context=ssl.create_default_context(), timeout=30) as client:
             client.login(config['username'], config['password'])

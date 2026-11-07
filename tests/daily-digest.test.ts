@@ -11,6 +11,7 @@ test('an empty day produces no issue and a sparse day does not invent entries', 
   const digest = dailyDigest('ai', '2026-11-05', [item('one')])!;
   assert.equal(digest.items.length, 1);
   assert.ok(digest.html.includes('本期 1 条'));
+  assert.ok(!digest.html.includes('只整理有来源的产品更新'));
 });
 
 test('an AI issue removes duplicates, keeps order, allows eight entries and preserves each link', () => {

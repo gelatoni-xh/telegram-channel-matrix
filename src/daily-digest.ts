@@ -39,10 +39,12 @@ export function dailyDigest(channel: 'ai' | 'steam', date: string, candidates: D
       lines.push(`<a href="${escapeHtml(item.url)}">${channel === 'steam' ? '查看商店 ↗' : '阅读原文 ↗'}</a> · ${escapeHtml(item.source)}${sourceDate}`);
       return lines.join('\n');
     });
-    const footer = (production ? '' : '样稿 · ') + (channel === 'steam'
+    const footer = channel === 'steam'
       ? `Steam 中国区 / CNY；价格核验 ${items[0]?.offer ? beijingTime(items[0].offer.checkedAt) : ''}（北京时间），以商店页面为准`
-      : '只整理有来源的产品更新');
-    return [`<b>${heading}</b>`, `${date} · 本期 ${items.length} 条`, '', blocks.join('\n\n'), '', `<i>${footer}</i>`].join('\n');
+      : production ? '' : '样稿 · 未发送';
+    const content = [`<b>${heading}</b>`, `${date} · 本期 ${items.length} 条`, '', blocks.join('\n\n')];
+    if (footer) content.push('', `<i>${footer}</i>`);
+    return content.join('\n');
   }
   while (items.length) {
     const html = render();
