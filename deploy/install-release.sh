@@ -50,9 +50,20 @@ for file in compose.yml package.json package-lock.json tsconfig.json README.md; 
   if [[ -f "$source_dir/$file" ]]; then cp -a "$source_dir/$file" "$root/$file"; fi
 done
 
+schema_version="$(docker exec telegram-postgres psql -U matrix_owner -d telegram_channel_matrix -Atq -c \
+  'SELECT COALESCE(max(version), 0) FROM matrix_schema_version')"
+if [[ "$schema_version" == 1 ]]; then
+  docker exec -i telegram-postgres psql -v ON_ERROR_STOP=1 -U matrix_owner -d telegram_channel_matrix \
+    < "$root/migrations/002_ai_windows.sql"
+elif [[ "$schema_version" != 2 ]]; then
+  echo "Unsupported database schema version: $schema_version" >&2
+  exit 1
+fi
+
 sudo install -m 0644 "$root/deploy/telegram-channel-matrix.service" /etc/systemd/system/telegram-channel-matrix.service
 sudo install -m 0644 "$root/deploy/telegram-channel-matrix.timer" /etc/systemd/system/telegram-channel-matrix.timer
 sudo systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/telegram-channel-matrix.service /etc/systemd/system/telegram-channel-matrix.timer
+sudo systemctl restart telegram-channel-matrix.timer
 
-echo "Installed $image; the daily timer remains independently managed."
+echo "Installed $image; the timer is active with missed-window catch-up disabled."

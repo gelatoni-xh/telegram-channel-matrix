@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { channels } from './config.js';
 import { readBotToken } from './credentials.js';
 import { dailyDigest, type DigestItem } from './daily-digest.js';
+import { generateEmailCopy } from './email-digest.js';
 import { generateDrafts, validateDraft, type Candidate } from './local-preview.js';
-import { operatingDate, ProductionStore } from './production-store.js';
+import { currentAiWindow, operatingDate, ProductionStore, windowBounds, type PublicationWindow } from './production-store.js';
 import { createTransport, TelegramError, TelegramPublisher } from './telegram.js';
 
 const execute = promisify(execFile);
@@ -19,16 +20,21 @@ async function python(script: string, argument: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (process.argv.length !== 2) throw new Error('daily_run_accepts_no_overrides');
+  const windowArg = process.argv[2] as PublicationWindow | undefined;
+  const channelArg = process.argv[3];
+  if (process.argv.length > 4 || (windowArg && !['morning','afternoon','evening','daily'].includes(windowArg))
+    || (channelArg && !['ai','steam'].includes(channelArg)) || (channelArg && !windowArg)) throw new Error('invalid_window_or_channel');
   if (!process.env.DATABASE_URL || !process.env.DATA_DIRECTORY || !process.env.MAIL_CONFIG_PATH) throw new Error('production_config_missing');
   const date = operatingDate();
+  const window: PublicationWindow = windowArg ?? currentAiWindow() ?? 'morning';
+  if (window === 'daily' && channelArg !== 'steam') throw new Error('daily_window_is_steam_only');
   const runId = randomUUID();
   const store = new ProductionStore(process.env.DATABASE_URL);
   await store.connect();
   let transport: ReturnType<typeof createTransport> | undefined;
   let started = false;
   const directory = join(process.env.DATA_DIRECTORY, 'runs', `${date}-${runId}`);
-  const report: any = { date, runId, startedAt: new Date().toISOString(), status: 'running', channels: [], sources: [] };
+  const report: any = { date, window, runId, startedAt: new Date().toISOString(), status: 'running', channels: [], sources: [] };
   try {
     if (!await store.lock()) { console.log('已有线上任务运行，本次退出。'); return; }
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -43,15 +49,23 @@ async function main(): Promise<void> {
     }));
     const active = [];
     for (const channel of channels) {
-      const status = await store.state(channel.key, date);
-      if (status && status !== 'failed') report.channels.push({ channel: channel.key, status: `blocked_${status}` });
+      if (channelArg && channel.key !== channelArg) continue;
+      if (channel.key === 'ai' && window === 'daily') continue;
+      if (channel.key === 'steam' && window !== 'morning' && window !== 'daily') continue;
+      const publicationWindow = channel.key === 'steam' ? 'daily' : window;
+      const status = await store.state(channel.key, date, publicationWindow);
+      if (status && status !== 'failed') report.channels.push({ channel: channel.key, window: publicationWindow, status: `blocked_${status}` });
       else active.push(channel);
     }
     if (!active.length) {
       report.status = report.channels.some((c: any) => c.status !== 'blocked_sent') ? 'attention_required' : 'already_sent';
       return;
     }
-    await python('collect-preview.py', directory);
+    const sourceWindow = window === 'daily' ? undefined : windowBounds(window as Exclude<PublicationWindow,'daily'>, date);
+    const collectionChannels = active.map(channel => channel.key);
+    await execute('python3', [join('scripts','collect-preview.py'), directory], { timeout: 600_000, maxBuffer: 1024 * 1024,
+      env: { ...process.env, MATRIX_CHANNELS: collectionChannels.length === 1 ? collectionChannels[0] : undefined,
+        ...(sourceWindow ? { MATRIX_WINDOW_START: sourceWindow.start, MATRIX_WINDOW_END: sourceWindow.end } : {}) } });
     const collected = await readJson(join(directory, 'candidates.json'));
     report.sources = collected.sources;
     await writeFile(join(directory, 'collected.json'), JSON.stringify(collected, null, 2));
@@ -73,7 +87,9 @@ async function main(): Promise<void> {
     const generated = await readJson(join(directory, 'llm-results.json'));
     report.model = generated.model;
     report.promptHash = generated.promptHash;
-    report.generation = generated.results.map((entry: any) => ({ id: entry.id, status: entry.status, kind: entry.kind }));
+    report.generation = generated.results.map((entry: any) => ({ id: entry.id,
+      channel: filtered.find(candidate => candidate.id === entry.id)?.channel,
+      status: entry.status, kind: entry.kind, reason: entry.reason }));
     const bot = await publisher.identity();
     for (const channel of active) {
       try {
@@ -87,7 +103,7 @@ async function main(): Promise<void> {
           report.steamPreflightRejected = preflight.rejected;
           candidates = preflight.accepted;
         }
-        const items: DigestItem[] = candidates.map(candidate => {
+      const items: DigestItem[] = candidates.map(candidate => {
           const result = generated.results.find((entry: any) => entry.id === candidate.id && entry.status === 'draft');
           const draft = validateDraft(result.draft, candidate);
           return { id: candidate.id, title: candidate.channel === 'steam' ? candidate.title : draft.title,
@@ -107,22 +123,29 @@ async function main(): Promise<void> {
         if (operatingDate() !== date) throw new Error('operating_date_changed');
         if (channel.key === 'steam' && candidates.some(c => Date.now() - Date.parse(c.fetchedAt) > 5 * 60_000)) throw new Error('stale_preflight');
         const selected = candidates.filter(candidate => digest.items.some(item => item.id === candidate.id));
-        if (!await store.reserve(channel.key,date,chatId,runId,digest,selected)) {
-          report.channels.push({ channel: channel.key, status: 'blocked_existing_record' }); continue;
+        const publicationWindow = channel.key === 'steam' ? 'daily' : window;
+        if (!await store.reserve(channel.key,date,publicationWindow,chatId,runId,digest,selected)) {
+          report.channels.push({ channel: channel.key, window: publicationWindow, status: 'blocked_existing_record' }); continue;
         }
         let messageId: number;
         try {
           messageId = await publisher.sendDigest(chatId,digest.html);
         } catch (error) {
-          await store.finish(channel.key,date,error instanceof TelegramError && error.outcome === 'rejected' ? 'failed' : 'uncertain');
+          await store.finish(channel.key,date,publicationWindow,error instanceof TelegramError && error.outcome === 'rejected' ? 'failed' : 'uncertain');
           throw error;
         }
         // A failed DB write after Telegram acceptance leaves 'sending' locked; never label it retryable.
-        await store.finish(channel.key,date,'sent',messageId);
-        report.channels.push({ channel: channel.key, status: 'sent', messageId, count: digest.items.length,
-          url: `https://t.me/${channel.username.slice(1)}/${messageId}` });
+        await store.finish(channel.key,date,publicationWindow,'sent',messageId);
+        report.channels.push({ channel: channel.key, window: publicationWindow, status: 'sent', messageId, count: digest.items.length,
+          url: `https://t.me/${channel.username.slice(1)}/${messageId}`,
+          emailItems: digest.items.map(item => {
+            const candidate = candidates.find(entry => entry.id === item.id)!;
+            const result = generated.results.find((entry: any) => entry.id === item.id && entry.status === 'draft');
+            return { id: item.id, title: item.title, source: item.source, url: item.url,
+              summary: candidate.summary, claims: result.draft.claims.map((claim: any) => claim.text), offer: item.offer };
+          }) });
       } catch {
-        report.channels.push({ channel: channel.key, status: 'error_check_database_receipt' });
+        report.channels.push({ channel: channel.key, window: channel.key === 'steam' ? 'daily' : window, status: 'error_check_database_receipt' });
       }
     }
     const errors = report.sources.some((s: any) => s.status === 'failed')
@@ -134,6 +157,8 @@ async function main(): Promise<void> {
     report.error = 'pipeline_failed_see_saved_stage_artifacts';
   } finally {
     if (started) {
+      try { report.emailCopy = await generateEmailCopy(report); }
+      catch { report.emailCopy = { status: 'unavailable', items: [] }; }
       report.finishedAt = new Date().toISOString();
       const path = join(directory,'run-report.json');
       await writeFile(path,JSON.stringify(report,null,2));

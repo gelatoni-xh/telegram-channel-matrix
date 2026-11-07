@@ -80,7 +80,7 @@ HTTPS_PROXY=http://127.0.0.1:PORT npm run preview:draft -- output/run-preview
 
 ## 频道样稿排版验收
 
-当前正式方向已改为每日精选：每频道每天一期，一期最多 5 条，各条独立来源链接，不凑数，无合格内容不发空稿。下述单条样稿保留作历史排版试验。每日采集一次，Steam 入选商品发送前定向复查；线上调度采用北京时间每天 09:00，执行完成后发布。
+当前正式方向为窗口精选：AI 频道每天北京时间 08:20、16:20、23:20 各运行一次，每篇最多 8 条；Steam 每天 08:20 运行一次、每篇最多 5 条。各条保留独立来源链接，不凑数，无合格内容不发空稿。下述单条样稿保留作历史排版试验。
 
 `npm run preview:digest -- output/2026-11-05-preview` 使用已有候选与 LLM 结果生成 `daily-digests.json` 及可点击的 `daily-digests.html`，不重复调用模型，也不发送。浏览器排版只作近似预览，Steam 价格为原采集快照；正式发布仍需复查。来源候选分别留存，组稿后每频道一期，超限减少完整条目，不默认拆帖。
 
@@ -101,17 +101,17 @@ systemctl list-timers telegram-channel-matrix.timer
 journalctl -u telegram-channel-matrix.service -n 100 --no-pager
 ```
 
-定时器每天北京时间 09:00（固定 UTC 01:00）触发，`Persistent=true` 在停机错过后恢复时尝试补跑，运行日期取实际启动时的北京时间日期，不补发历史日期。没有常驻应用进程，也没有人工发送界面。暂不建立 Codex 定时任务。
+systemd timer 每天北京时间 08:20、16:20、23:20 触发（UTC 分别为 00:20、08:20、15:20）。`Persistent=false`，错过的窗口不会在开机或部署后自动补发；服务运行失败也没有自动重试。Steam 只在 08:20 的早间轮次运行。明确补跑通过同一 worker 指定窗口和频道，例如 `node dist/src/daily-run.js morning ai` 补跑 AI 早间窗口；运维需通过实例既有受控入口运行并核对日报账本。日期始终取北京时间当天，不补发历史日期。没有常驻应用进程，也没有人工发送界面。暂不建立 Codex 定时任务。
 
-数据库 advisory lock 防并发运行；`channel + operating_date + daily_digest` 唯一约束限制每频道每天一期。已有 `sent` 在取数及 LLM 前拦截；`sending/uncertain` 阻止重发，须先核对频道。明确被 Telegram 拒绝的 `failed` 可通过相同入口补跑。发送前提交 sending 和完整待发稿，收到匹配频道、正整数 message_id 的 Telegram 成功回执才写 sent、消息 ID 与时间。数据库写回失败也保留 sending 锁，不自动重发。删除频道消息不会清除数据库发送历史。
+数据库 advisory lock 防并发运行；AI 按 `channel + operating_date + window_id + daily_digest` 防止同窗口重复，Steam 按每日 `daily` 窗口防重。AI 的早间窗口覆盖前一日 23:20 到当日 08:20，下午覆盖 08:20 到 16:20，晚间覆盖 16:20 到 23:20；各窗口不重叠。所有已发送条目仍跨窗口去重。已有 `sent` 在取数及 LLM 前拦截；`sending/uncertain` 阻止重发，须先核对频道。明确被 Telegram 拒绝的 `failed` 可通过相同入口补跑。发送前提交 sending 和完整待发稿，收到匹配频道、正整数 message_id 的 Telegram 成功回执才写 sent、消息 ID 与时间。数据库写回失败也保留 sending 锁，不自动重发。删除频道消息不会清除数据库发送历史。
 
-跨日去重：AI 按原文链接；Steam 按 App ID、价格和活动截止时间识别同一优惠。Steam 最多取 5 条候选，精选优惠列表按折扣排序，最多检查 20 个商品，降价至少 30%、剩余至少 12 小时，必须是中国区 CNY 付费游戏，发送前再次核对类型、价格、折扣、截止时间。覆盖仅限 Steam featured specials，不代表全站优惠或史低。AI 使用三个官方 RSS 的前一北京时间自然日零点到采集时刻窗口，每来源最多 8 条；重叠窗口通过持久化发布记录去重。Prompt 为 `prompts/daily-v1.txt`。当前仍仅使用短摘要和逐字证据匹配，不能自动证明生成句全部语义。
+跨日去重：AI 按原文链接；Steam 按 App ID、价格和活动截止时间识别同一优惠。Steam 最多取 5 条候选，精选优惠列表按折扣排序，最多检查 20 个商品，降价至少 30%、剩余至少 12 小时，必须是中国区 CNY 付费游戏，发送前再次核对类型、价格、折扣、截止时间。覆盖仅限 Steam featured specials，不代表全站优惠或史低。AI 使用七个官方 RSS 的窗口内内容，每来源最多 8 条；重叠窗口通过持久化发布记录去重。Prompt 为 `prompts/daily-v1.txt`。当前仍仅使用短摘要和逐字证据匹配，不能自动证明生成句全部语义。
 
-每次运行保存 sources/candidates/LLM 结果/发前复核/最终报告到 `data/runs/`；数据库保存运行报告、每期完整待发稿、入选条目、消息 ID 和状态。零合格内容、来源失败、生成失败和真实发送分别记录。运行报告经原有 SMTP 发给运营者；邮件失败不改写 Telegram 发送结果。进程启动失败、超时或异常退出，由 systemd 退出钩子尝试补发故障邮件。SMTP 提交成功不等于收件箱已收到。
+每次运行保存 sources/candidates/LLM 结果/发前复核/最终报告到 `data/runs/`；数据库保存运行报告、每期完整待发稿、入选条目、消息 ID 和状态。零合格内容、来源失败、生成失败和真实发送分别记录。运行报告经原有 SMTP 发给运营者；邮件按中文日报结构呈现，条目介绍经过第二轮 LLM 改写并校验来源引文，价格、截止时间、发布状态和链接由程序结构化填入。二次改写失败时使用已校验的原文案，不影响 Telegram 发布结果。进程启动失败、超时或异常退出，由 systemd 退出钩子尝试补发故障邮件。SMTP 提交成功不等于收件箱已收到。
 
 `deploy/backup.sh` 在服务退出时保存本项目自定义格式数据库备份及 SHA256，服务器保留 14 天，不操作其他项目的备份或卷。恢复前应先停用定时器、核对 Telegram 真实发送，再恢复到独立数据库检查；旧备份可能不包含最新发送回执，不得恢复后直接重跑。
 
-GitHub Actions 在 PR 上运行 PostgreSQL 集成测试、类型检查、单元测试和构建；合并或推送到 `main` 后构建镜像并部署。仓库 Secrets 仅保存 SSH 部署连接信息（`DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS`）。Telegram、LLM、数据库和 SMTP 的运行凭据只保存在 Ubuntu-4 的受保护配置中。部署脚本先检查新镜像的运行配置，再更新源码和 systemd 单元；定时器状态由实例配置管理，部署不会发送频道文章或主动启停定时器。不要用 `test-send` 或 `sample:send` 补发每日精选，这两个历史排版测试工具不使用生产每日锁。
+GitHub Actions 在 PR 上运行 PostgreSQL 集成测试、类型检查、单元测试和构建；合并或推送到 `main` 后构建镜像并部署。仓库 Secrets 仅保存 SSH 部署连接信息（`DEPLOY_HOST`、`DEPLOY_USER`、`DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS`）。Telegram、LLM、数据库和 SMTP 的运行凭据只保存在 Ubuntu-4 的受保护配置中。部署脚本先检查新镜像的运行配置，再更新源码、执行数据库迁移并重载 timer；`Persistent=false` 避免部署时补发，部署本身不会发送频道文章。不要用 `test-send` 或 `sample:send` 补发每日精选，这两个历史排版测试工具不使用生产发布账本。
 
 ### 首轮生产验收（2026-11-05）
 

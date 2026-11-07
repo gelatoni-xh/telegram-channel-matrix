@@ -1,9 +1,11 @@
 [Unit]
-Description=Daily channel digests at 09:00 Beijing time
+Description=AI channel windows at 08:20, 16:20 and 23:20 Beijing time
 
 [Timer]
-OnCalendar=*-*-* 09:00:00 Asia/Shanghai
-Persistent=true
+OnCalendar=*-*-* 08:20:00 Asia/Shanghai
+OnCalendar=*-*-* 16:20:00 Asia/Shanghai
+OnCalendar=*-*-* 23:20:00 Asia/Shanghai
+Persistent=false
 AccuracySec=1s
 Unit=telegram-channel-matrix.service
 

@@ -9,9 +9,9 @@ export const channels: readonly Channel[] = [
   { key: 'steam', title: 'Steam折扣情报局', username: '@steam_deals_radar_cn' },
 ];
 
-// A daily issue is the publishing unit; candidates remain individually traceable.
+// AI publishes three bounded windows; Steam remains one daily issue.
 export const dailySelectionPolicy = {
-  format: 'daily-digest', collectionRunsPerDay: 1, issuesPerChannelPerDay: 1,
-  maxItems: 5, minimumItems: 1, timeZone: 'Asia/Shanghai',
-  triggerTime: '09:00',
+  format: 'windowed-digest', collectionRunsPerDay: 3,
+  maxItems: { ai: 8, steam: 5 }, minimumItems: 1, timeZone: 'Asia/Shanghai',
+  aiTriggerTimes: ['08:20', '16:20', '23:20'], steamTriggerTime: '08:20',
 } as const;

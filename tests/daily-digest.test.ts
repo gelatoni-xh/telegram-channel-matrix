@@ -13,12 +13,22 @@ test('an empty day produces no issue and a sparse day does not invent entries', 
   assert.ok(digest.html.includes('本期 1 条'));
 });
 
-test('a daily issue removes duplicates, keeps order, limits entries and preserves each link', () => {
-  const digest = dailyDigest('ai', '2026-11-05', [item('1'), item('1'), ...['2', '3', '4', '5', '6'].map(item)])!;
-  assert.deepEqual(digest.items.map(entry => entry.id), ['1', '2', '3', '4', '5']);
+test('an AI issue removes duplicates, keeps order, allows eight entries and preserves each link', () => {
+  const digest = dailyDigest('ai', '2026-11-05', [item('1'), item('1'), ...['2', '3', '4', '5', '6', '7', '8', '9'].map(item)])!;
+  assert.deepEqual(digest.items.map(entry => entry.id), ['1', '2', '3', '4', '5', '6', '7', '8']);
+  assert.deepEqual(digest.omittedIds, ['9']);
+  assert.ok(digest.html.includes('href="https://example.com/8"'));
+  assert.ok(!digest.html.includes('href="https://example.com/9"'));
+});
+
+test('a Steam daily issue remains limited to five entries', () => {
+  const games = ['1','2','3','4','5','6'].map(id => ({ ...item(id), offer: {
+    finalMinor: 500, initialMinor: 1000, discountPercent: 50,
+    expiresAt: '2026-11-10T00:00:00Z', checkedAt: '2026-11-05T00:00:00Z',
+  } }));
+  const digest = dailyDigest('steam', '2026-11-05', games)!;
+  assert.equal(digest.items.length, 5);
   assert.deepEqual(digest.omittedIds, ['6']);
-  assert.ok(digest.html.includes('href="https://example.com/5"'));
-  assert.ok(!digest.html.includes('href="https://example.com/6"'));
 });
 
 test('long issues drop entire entries without cutting source links or HTML', () => {

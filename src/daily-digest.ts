@@ -16,8 +16,9 @@ export function dailyDigest(channel: 'ai' | 'steam', date: string, candidates: D
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('invalid_issue_date');
   const seen = new Set<string>();
   const unique = candidates.filter(item => !seen.has(item.id) && Boolean(seen.add(item.id)));
-  const items = unique.slice(0, dailySelectionPolicy.maxItems);
-  const omittedIds = unique.slice(dailySelectionPolicy.maxItems).map(item => item.id);
+  const limit = dailySelectionPolicy.maxItems[channel];
+  const items = unique.slice(0, limit);
+  const omittedIds = unique.slice(limit).map(item => item.id);
   function render(): string {
     const heading = channel === 'ai' ? '⚡ AI产品雷达 · 每日精选' : '🎮 Steam折扣情报局 · 每日精选';
     const blocks = items.map((item, index) => {
