@@ -19,6 +19,11 @@ export function preflightSkipReason(candidate: Candidate): string | undefined {
     && !candidate.categories?.some(category => category.trim().toLowerCase() === 'product')) {
     return 'openai_non_product_or_missing_category';
   }
+  if (candidate.channel === 'ai' && candidate.source === 'AWS Machine Learning Blog'
+    && candidate.categories?.some(category => ['technical how-to', 'customer solutions', 'thought leadership']
+      .includes(category.trim().toLowerCase()))) {
+    return 'aws_non_product_editorial_category';
+  }
   if (!candidate.summary || (candidate.source === 'Hugging Face Blog'
     && new URL(candidate.url).pathname.split('/').filter(Boolean).length > 2)) {
     return 'missing_summary_or_unverified_community_publisher';

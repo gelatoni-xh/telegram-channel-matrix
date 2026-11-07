@@ -19,3 +19,12 @@ test('OpenAI metadata requirement does not suppress other feeds or Steam', () =>
   assert.equal(preflightSkipReason({ ...base, channel: 'steam', source: 'Steam 中国区商店' }), undefined);
   assert.equal(preflightSkipReason({ ...base, source: 'Hugging Face Blog', url: 'https://huggingface.co/blog/org/story' }), 'missing_summary_or_unverified_community_publisher');
 });
+
+test('AWS tutorials, customer cases and thought leadership are excluded before generation', () => {
+  const base = { channel: 'ai' as const, source: 'AWS Machine Learning Blog', title: 'Example', summary: 'Useful update',
+    url: 'https://aws.amazon.com/example', fetchedAt: '2026-11-07T00:00:00Z' };
+  for (const category of ['Technical How-to', 'Customer Solutions', 'Thought Leadership']) {
+    assert.equal(preflightSkipReason({ ...base, id: category, categories: [category] }), 'aws_non_product_editorial_category');
+  }
+  assert.equal(preflightSkipReason({ ...base, id: 'mcp', categories: ['Amazon Bedrock AgentCore'] }), undefined);
+});
