@@ -78,13 +78,26 @@ test('real Postgres serializes runs, deduplicates dates and preserves uncertain 
       assert.equal(await a.seen(candidate), true);
       await a.reserve('ai','2026-11-05','morning',-1002,runId,{},[]);
       await a.finish('ai','2026-11-05','morning','failed');
-      assert.equal(await b.reserve('ai','2026-11-05','morning',-1002,runId,{},[]), true);
+      assert.equal(await b.reserve('ai','2026-11-05','morning',-1002,runId,{items:[{},{}]},[]), true);
       await b.finish('ai','2026-11-05','morning','sent',123);
       assert.equal(await a.reserve('ai','2026-11-05','morning',-1002,runId,{},[]), false);
       await assert.rejects(a.finish('ai','2026-11-05','morning','failed'));
       assert.equal(await a.state('ai','2026-11-05','morning'), 'sent');
-      assert.equal(await a.reserve('ai','2026-11-05','afternoon',-1002,runId,{},[]), true);
+      assert.equal(await a.reserve('ai','2026-11-05','afternoon',-1002,runId,{items:[{}]},[]), true);
       await a.finish('ai','2026-11-05','afternoon','sent',124);
+      const exportResult = await setup.query(await readFile('deploy/export-channel-stats.sql', 'utf8'));
+      const exportReport = JSON.parse(exportResult.rows[0].jsonb_build_object as string) as {
+        days: Array<{ date: string; channels: Array<Record<string, unknown>> }>;
+      };
+      const exportedDay = exportReport.days.find(day => day.date === '2026-11-05');
+      const aiRows = exportedDay?.channels.filter(channel => channel.key === 'ai') ?? [];
+      assert.equal(aiRows.length, 1);
+      const ai = aiRows[0];
+      assert.ok(ai);
+      assert.equal(ai.status, 'sent');
+      assert.equal(ai.publishedItems, 3);
+      assert.equal(ai.messageId, 124);
+      assert.equal(ai.url, 'https://t.me/ai_product_radar_cn/124');
       assert.equal(await a.reserve('ai','2026-11-06','morning',-1002,runId,{},[]), true);
       await setup.query("DELETE FROM matrix_publication_items WHERE operating_date='2026-11-05'");
       await setup.query('DELETE FROM matrix_publications WHERE run_id=$1', [runId]);
